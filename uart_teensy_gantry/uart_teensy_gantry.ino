@@ -19,22 +19,43 @@ int PCRecCount=0;
 int PCArgument[24];
 enum PCRecState_t{waitforcommand, argument};
 enum PCCommand_t{nix,en,di,la,gohoseq,sp,v};
+enum MotRecState_t{nothingtodo, waitfor_pos_data, waitfor_vel_data};
+enum DataMsgStatus_t{na, avail, sent};
 
-enum MotXRecState_t{nothingtodo, waitforposition, waitforvelocity};
-int MotXMessageCount = 0;
-int MotXMessage[10];
+MotRecState_t MotXRecState = nothingtodo; 
+MotRecState_t MotYRecState = nothingtodo; 
+DataMsgStatus_t MotXPosState = na;
+DataMsgStatus_t MotXVelState = na;
+DataMsgStatus_t MotYPosState = na;
+DataMsgStatus_t MotYVelState = na;
 
-enum PosMsgStatus_t{pos_na,pos_requested, pos_received};
-enum VelMsgStatus_t{vel_na,vel_requested, vel_received};
 
 const int led_pin = 13;      // default to pin 13
 
 PCRecState_t PCRecState=waitforcommand;
 PCCommand_t PCCommand=nix;
 
-MotXRecState_t MotXRecState = nothingtodo; 
-PosMsgStatus_t MotXPosStatus = pos_na;
-VelMsgStatus_t MotXVelStatus = vel_na;
+int MotXMessageCount = 0;
+int MotXMessage[14];
+int MotX_pos[5];
+int MotX_vel[5];
+
+int MotYMessageCount = 0;
+int MotYMessage[14];
+int MotY_pos[5];
+int MotY_vel[5];
+
+
+
+char output_data[30];
+char motx_pos[9];
+char motx_vel[5];
+char moty_pos[9];
+char moty_vel[5];
+
+boolean trigger=false;
+boolean todo = false;
+
 
 
 bool NeuerBefehl=false;
@@ -43,11 +64,21 @@ void command_di();
 void command_la();
 void command_sp();
 void command_v();
-void getPosition();
-void getVelocity();
 
 
+void getPosMotX();
+void getVelMotX();
+void getPosMotY();
+void getVelMotY();
 
+void merge_transmit_data();
+
+const int incPERmm_x = 2000000/3100;
+const int incPERmm_y = 945800/1600;
+const int incPERmm_z = 1;
+
+int convert_inc_2_mm(int x_pos, int y_pos, int z_pos);
+int convert_mm_2_inc(int x_inc, int y_inc, int z_inc);
 
 
 void ControllerStep()
@@ -55,9 +86,11 @@ void ControllerStep()
   static boolean output=HIGH;
   digitalWrite(led_pin, output);
   output = !output;
+  trigger =!trigger;
+  todo = true;
 }
 
-void getPosition()
+void getPosMotX()
 {
   switch (MotXRecState) 
   {
@@ -65,11 +98,7 @@ void getPosition()
         
         Serial2.write("pos");
         Serial2.write(13);
-        MotXRecState = waitforposition;
-        
-        MotXPosStatus = pos_requested;
-        
-        Serial.println("requested position MotX");
+        MotXRecState = waitfor_pos_data;
         break;
         
       default:
@@ -77,7 +106,23 @@ void getPosition()
   }
 }
 
-void getVelocity()
+void getPosMotY()
+{
+  switch (MotYRecState) 
+  {
+      case nothingtodo:
+        
+        Serial3.write("pos");
+        Serial3.write(13);
+        MotYRecState = waitfor_pos_data;
+        break;
+        
+      default:
+        break;
+  }
+}
+
+void getVelMotX()
 {
   switch (MotXRecState) 
   {
@@ -85,19 +130,77 @@ void getVelocity()
         
         Serial2.write("gn");
         Serial2.write(13);
-        MotXRecState = waitforvelocity;
-        
-        MotXVelStatus = vel_requested;
-        
-        Serial.println("requested velocity MotX");
+        MotXRecState = waitfor_vel_data;
         break;
         
       default:
         break;
   }
-} 
+}
+
+void getVelMotY()
+{
+  switch (MotYRecState) 
+  {
+      case nothingtodo:
+        
+        Serial3.write("gn");
+        Serial3.write(13);
+        MotYRecState = waitfor_vel_data;
+        break;
+        
+      default:
+        break;
+  }
+}
 
 
+void serialEvent2()
+{
+   int incomingByte;
+
+   if (Serial2.available() > 0) 
+   {
+      incomingByte = Serial2.read();
+      MotXMessage[MotXMessageCount++]=incomingByte;
+      
+      switch (MotXRecState)
+      {
+        case waitfor_pos_data:
+           if (incomingByte == 10)
+           {
+               //Serial.write("MotX_position=");
+               for (int i=0; i<MotXMessageCount;i++)
+               {  
+                  motx_pos[i] = MotXMessage[i];
+               }
+               MotXMessageCount = 0;
+               MotXPosState = avail;
+               MotXRecState = nothingtodo;               
+           }
+           break;
+
+        case waitfor_vel_data:
+           if (incomingByte == 10)
+           {
+               //Serial.write("MotX_velocity=");
+               for (int i=0; i<MotXMessageCount;i++)
+               {
+                  motx_vel[i] = MotXMessage[i];
+               }
+               MotXMessageCount = 0;
+               MotXVelState = avail;
+               MotXRecState = nothingtodo;                          
+           }
+           break;
+
+        default: Serial.write(incomingByte);
+        
+      }
+     
+             
+   }
+}
 
 void serialEvent1()
 {
@@ -111,19 +214,18 @@ void serialEvent1()
         case waitforcommand:
            switch (incomingByte)
            {
-               case 97: PCCommand=en; break;
-               case 98: PCCommand=di; break;
-               case 99: PCCommand=la; break;
-               case 100: PCCommand=gohoseq; break;
-               case 101: PCCommand=sp; break;
-               case 102: PCCommand=v; break;
+               case 97: PCCommand=en; break;        // a
+               case 98: PCCommand=di; break;        // b
+               case 99: PCCommand=la; break;        // c
+               case 100: PCCommand=gohoseq; break;  // d
+               case 101: PCCommand=sp; break;       // e
+               case 102: PCCommand=v; break;        // f
            }
                       
            PCRecCount=0;
            PCRecState=argument;
            Serial.write("Befehl empfangen: ");
            Serial.println(incomingByte);
-           Serial.println(PCCommand);
            
         break;
 
@@ -139,55 +241,6 @@ void serialEvent1()
                NeuerBefehl=true;            
            }
         break;
-
-        default: Serial.write(incomingByte);
-        
-      }
-     
-             
-   }
-}
-
-void serialEvent2()
-{
-   int incomingByte;
-
-   if (Serial2.available() > 0) 
-   {
-      incomingByte = Serial2.read();
-      switch (MotXRecState)
-      {
-        case waitforposition:
-           MotXMessage[MotXMessageCount++]=incomingByte;
-           if (incomingByte = 10)
-           {
-               MotXPosStatus = pos_received;
-               MotXRecState = nothingtodo;
-               Serial.write("MotX_position=");
-               for (int i=0; i<MotXMessageCount;i++)
-               {
-                  Serial.write(MotXMessage[i]);
-               }
-               MotXMessageCount = 0;
-                           
-           }
-           break;
-
-        case waitforvelocity:
-
-           if (incomingByte = 10)
-           {
-               MotXVelStatus = vel_received;
-               MotXRecState = nothingtodo;
-               Serial.write("MotX_velocity=");
-               for (int i=0; i<MotXMessageCount;i++)
-               {
-                  Serial.write(MotXMessage[i]);
-               }
-               MotXMessageCount = 0;
-                           
-           }
-           break;
 
         default: Serial.write(incomingByte);
         
@@ -218,11 +271,48 @@ void serialEvent3()
 {
    int incomingByte;
 
-  
    if (Serial3.available() > 0) 
    {
       incomingByte = Serial3.read();
-      Serial.write(incomingByte);
+      MotYMessage[MotYMessageCount++]=incomingByte;
+      
+      switch (MotYRecState)
+      {
+        case waitfor_pos_data:
+           if (incomingByte == 10)
+           {
+               //Serial.write("MotY_position=");
+               for (int i=0; i<MotYMessageCount;i++)
+               {  
+                  moty_pos[i] = MotYMessage[i];
+                  //Serial.write(MotYMessage[i]);
+               }
+               //Serial.write(13);
+               MotYMessageCount = 0;
+               MotYPosState = avail;
+               MotYRecState = nothingtodo;               
+           }
+           break;
+
+        case waitfor_vel_data:
+           if (incomingByte == 10)
+           {
+               //Serial.write("MotY_velocity=");
+               for (int i=0; i<MotYMessageCount;i++)
+               {
+                  moty_vel[i] = MotYMessage[i];
+                  //Serial.write(MotYMessage[i]);
+               }
+               //Serial.write(13);
+               MotYMessageCount = 0;
+               MotYVelState = avail;
+               MotYRecState = nothingtodo;                          
+           }
+           break;
+
+        default: Serial.write(incomingByte);
+        
+      }
    }
 }
 
@@ -272,8 +362,8 @@ void command_la() // go to absolute position
 
 void command_gohoseq()
 {
-  Serial.write("gohoseq");
-  Serial.write(13);
+  Serial2.write("gohoseq");
+  Serial2.write(13);
   
   Serial3.write("gohoseq");
   Serial3.write(13);
@@ -300,13 +390,13 @@ void command_sp() // set max speed
 
 void command_v()
 {
-  Serial2.write("v");
+  Serial2.write("v-1000");
   Serial2.write(13);
   
-  Serial3.write("v");
+  Serial3.write("v0");
   Serial3.write(13);
   
-  Serial4.write("v");
+  Serial4.write("v0");
   Serial4.write(13);
 }
 
@@ -326,13 +416,74 @@ void setup() {
   Serial2.begin(19200,SERIAL_8N1);
   Serial3.begin(19200,SERIAL_8N1);
   Serial4.begin(19200,SERIAL_8N1);
-  FlexiTimer2::set(50000, 1.0/100000, ControllerStep); // call every 50000 10µs "ticks"
+  FlexiTimer2::set(5000, 1.0/100000, ControllerStep); // call every 50000 10µs "ticks"
   FlexiTimer2::start();
+
+
 }
+
+void merge_transmit_data()
+  {
+  int i = 0;
+  int k = 0;
+  do 
+  {
+    output_data[i++] = motx_pos[k++];
+  } while (motx_pos[k]!=13);
+  output_data[i++] =44;
+  k = 0;
+  do
+  {
+    output_data[i++] = motx_vel[k++];
+  }while(motx_vel[k]!=13);
+  output_data[i++] =44;
+  k = 0;
+  do 
+  {
+    output_data[i++] = moty_pos[k++];
+  } while (moty_pos[k]!=13);
+  output_data[i++] =44;
+  k = 0;
+  do
+  {
+    output_data[i++] = moty_vel[k++];
+  }while(moty_vel[k]!=13);
+  output_data[i++] =44;
+  for (int ii=0; ii<i;ii++)
+  {
+    Serial1.write(output_data[ii]);
+  };
+  Serial1.write(13);
+  Serial1.write(10);
+}
+  
 
 void loop() 
 {
-  
+    if (trigger && todo)
+    {
+      if (MotXPosState != avail) getPosMotX();
+      if (MotXVelState != avail) getVelMotX();
+      if (MotYPosState != avail) getPosMotY();
+      if (MotYVelState != avail) getVelMotY();
+      todo = false;
+        
+    }
+    if ((MotXPosState == avail) && 
+        (MotXVelState == avail) &&
+        (MotYVelState == avail) &&
+        (MotYVelState == avail))
+    {
+      merge_transmit_data();
+      
+      MotXPosState = sent;
+      MotXVelState = sent;
+      MotYPosState = sent;
+      MotYVelState = sent;
+    }
+
+    
+    
    if (NeuerBefehl)
    {
       NeuerBefehl=false;
@@ -357,12 +508,12 @@ void loop()
                break;
                
                case sp: // set max speed
-                getVelocity();
+                    command_sp();   
                break;
                
                
                case v:  // set target velocity
-                  getPosition();
+                    command_v();
                
                break;
            }
