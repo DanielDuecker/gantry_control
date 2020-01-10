@@ -20,17 +20,17 @@ int PCRecCount=0;
 int PCArgument[19];
 char PCCommandArgument[19];
 int CommandArgument_int[3];
-//int CommandArgument_test[3];
 
 
-enum CodeState_t{gantry_control, feedthrough_Serial1_2, feedthrough_Serial1_3, feedthrough_Serial1_4};
+
+enum CommunicationMode_t{gantry_control, feedthrough_Serial1_2, feedthrough_Serial1_3, feedthrough_Serial1_4};
 enum PCRecState_t{waitforcommand, argument};
 enum PCCommand_t{nix,en,di,sp,gohoseq,la,lr,v};
 enum MotRecState_t{nothingtodo, waitfor_pos_data, waitfor_vel_data};
 enum DataMsgStatus_t{na, avail, sent};
 
-//
-CodeState_t CodeState = gantry_control;
+// select Communication mode
+CommunicationMode_t CommunicationMode = gantry_control;
 
 
 
@@ -130,10 +130,24 @@ void Status_LED()
 {
   static boolean output=HIGH;
   static int led_count = 0;
-  int rate = 10; // in Hz
+  static int flash_rate_hz;
+
+  if (CommunicationMode == gantry_control)
+  {
+    flash_rate_hz = 2;
+  }
+  else if (CommunicationMode==feedthrough_Serial1_2 or CommunicationMode==feedthrough_Serial1_3 or CommunicationMode==feedthrough_Serial1_4)
+  {
+    flash_rate_hz = 10;
+  }
+  else
+  {
+    flash_rate_hz = 30;
+  }
+
   led_count++;
   digitalWrite(led_pin, output);
-  if (led_count== 200/rate)
+  if (led_count== 200/flash_rate_hz)
   {
     output = !output;
     led_count = 0;
@@ -267,7 +281,7 @@ void serialEvent1()
 {
   static int incomingByte;
 
-  switch (CodeState)
+  switch (CommunicationMode)
   {
     case gantry_control:
     {
@@ -399,7 +413,7 @@ void serialEvent2()
 {
   static int incomingByte;
 
-  if (CodeState==gantry_control)
+  if (CommunicationMode==gantry_control)
   {
     if (Serial2.available() > 0) 
     {
@@ -454,7 +468,7 @@ void serialEvent2()
         }
     }
   }
-  else if (CodeState==feedthrough_Serial1_2)
+  else if (CommunicationMode==feedthrough_Serial1_2)
   {
     if (Serial2.available() > 0) 
     {
@@ -475,7 +489,7 @@ void serialEvent3()
 {
   int incomingByte;
 
-  if (CodeState==gantry_control)
+  if (CommunicationMode==gantry_control)
   {
     if (Serial3.available() > 0) 
     {
@@ -525,7 +539,7 @@ void serialEvent3()
       }
     }
   }
-  else if (CodeState==feedthrough_Serial1_3)
+  else if (CommunicationMode==feedthrough_Serial1_3)
   {
     if (Serial3.available() > 0) 
     {
@@ -546,7 +560,7 @@ void serialEvent4()
 {
   static int incomingByte;
 
-  if (CodeState==gantry_control)
+  if (CommunicationMode==gantry_control)
   {
     if (Serial4.available() > 0) 
     {
@@ -596,7 +610,7 @@ void serialEvent4()
       }
     }
   }
-  else if (CodeState==feedthrough_Serial1_4)
+  else if (CommunicationMode==feedthrough_Serial1_4)
   {
     if (Serial4.available() > 0) 
     {
@@ -764,7 +778,7 @@ void setup()
   // Debug-Port / USB
   Serial.begin(115200);
 
-  if (CodeState == gantry_control)
+  if (CommunicationMode==gantry_control)
   {
     // External Computer
     Serial1.setRX(0);
@@ -824,7 +838,7 @@ void transmit_data()
 
 void loop() 
 {
-  if (CodeState==gantry_control)
+  if (CommunicationMode==gantry_control)
   {
      // Request pos/vel data from motor
      if (trigger && todo)
