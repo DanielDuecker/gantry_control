@@ -22,10 +22,17 @@ char PCCommandArgument[19];
 int CommandArgument_int[3];
 //int CommandArgument_test[3];
 
+
+enum CodeState_t{gantry_control, feedthrough_Serial1_2, feedthrough_Serial1_3, feedthrough_Serial1_4};
 enum PCRecState_t{waitforcommand, argument};
 enum PCCommand_t{nix,en,di,sp,gohoseq,la,lr,v};
 enum MotRecState_t{nothingtodo, waitfor_pos_data, waitfor_vel_data};
 enum DataMsgStatus_t{na, avail, sent};
+
+//
+CodeState_t CodeState = gantry_control;
+
+
 
 MotRecState_t MotXRecState = nothingtodo; 
 MotRecState_t MotYRecState = nothingtodo; 
@@ -258,98 +265,131 @@ void serialEvent()
 
 void serialEvent1()
 {
-   int incomingByte;
+  static int incomingByte;
 
-   // incoming command has to be in the form of
-   // command[1]arg1[6]arg2[6]arg3[6]\r\n
-   // arguments have to be in [mm] or [mm/s] respectively
-   // example for go to absolute position: e123456123456123456
-
-  
-  if (PCRecState == 10) // super uggly bugfix, since for negative "x" commmands PCRecState is magically set to 10
+  switch (CodeState)
   {
-    PCRecState = waitforcommand;
-  }
-   if (Serial1.available() > 0) 
-   {
-      incomingByte = Serial1.read();
+    case gantry_control:
+    {
+      // incoming command has to be in the form of
+      // command[1]arg1[6]arg2[6]arg3[6]\r\n
+      // arguments have to be in [mm] or [mm/s] respectively
+      // example for go to absolute position: e123456123456123456
 
-      //Serial.printf("Serial1 event: Incoming Byte %d\r\n",incomingByte);
-      switch (PCRecState)
+      if (PCRecState == 10) // super uggly bugfix, since for negative "x" commmands PCRecState is magically set to 10
       {
-        case waitforcommand:
-        {
-          //Serial.printf("wait for command received %d\r\n",incomingByte);
+        PCRecState = waitforcommand;
+      }
+      if (Serial1.available() > 0) 
+      {
+          incomingByte = Serial1.read();
 
-          int commandByte = incomingByte;
-          switch (commandByte)
+          //Serial.printf("Serial1 event: Incoming Byte %d\r\n",incomingByte);
+          switch (PCRecState)
           {
-              case 97:  PCCommand=en;  break;       // a
-              case 98:  PCCommand=di;  break;       // b
-              case 99:  PCCommand=sp;  break;       // c
-              case 100: PCCommand=gohoseq; break;  // d
-              case 101: PCCommand=la; break;       // e
-              case 102: PCCommand=lr; break;       // f
-              case 103: PCCommand=v;  break;       // g
-              default:  PCCommand=nix; 
-                  Serial.printf("kein gueltiger Befehl: %d\r\n",commandByte);
-                  break;
+            case waitforcommand:
+            {
+              //Serial.printf("wait for command received %d\r\n",incomingByte);
 
-          }
-                      
-          PCRecCount=0;
-
-          PCRecState=argument;
-          Serial.printf("\r\nBefehl empfangen: %d\r\n",commandByte);
-        }
-        break;
-
-        case argument:
-        {
-          PCArgument[PCRecCount++]=incomingByte;
-          //Serial.printf("wait for argument received %d\r\n",incomingByte);
-          
-          if (incomingByte==10 and PCRecCount==20) 
-          {
-              // Motor X commands
-              for (int ii=0;ii<arg_length;ii++)
+              int commandByte = incomingByte;
+              switch (commandByte)
               {
-                  DriveCommandArgument[ii] = PCArgument[ii];
+                  case 97:  PCCommand=en;  break;       // a
+                  case 98:  PCCommand=di;  break;       // b
+                  case 99:  PCCommand=sp;  break;       // c
+                  case 100: PCCommand=gohoseq; break;  // d
+                  case 101: PCCommand=la; break;       // e
+                  case 102: PCCommand=lr; break;       // f
+                  case 103: PCCommand=v;  break;       // g
+                  default:  PCCommand=nix; 
+                      Serial.printf("kein gueltiger Befehl: %d\r\n",commandByte);
+                      break;
+
               }
-              DriveCommandArgument[arg_length] = '\0';
-              CommandArgument_int[0] = atoi(DriveCommandArgument);
-              Serial.printf("Arg0: %d\r\n", CommandArgument_int[0]);
+                          
+              PCRecCount=0;
 
-              // Motor Y Commands
-              for (int ii=0;ii<arg_length;ii++)
+              PCRecState=argument;
+              Serial.printf("\r\nBefehl empfangen: %d\r\n",commandByte);
+            }
+            break;
+
+            case argument:
+            {
+              PCArgument[PCRecCount++]=incomingByte;
+              //Serial.printf("wait for argument received %d\r\n",incomingByte);
+              
+              if (incomingByte==10 and PCRecCount==20) 
               {
-                DriveCommandArgument[ii] = PCArgument[ii+arg_length]; // second argument
+                  // Motor X commands
+                  for (int ii=0;ii<arg_length;ii++)
+                  {
+                      DriveCommandArgument[ii] = PCArgument[ii];
+                  }
+                  DriveCommandArgument[arg_length] = '\0';
+                  CommandArgument_int[0] = atoi(DriveCommandArgument);
+                  Serial.printf("Arg0: %d\r\n", CommandArgument_int[0]);
+
+                  // Motor Y Commands
+                  for (int ii=0;ii<arg_length;ii++)
+                  {
+                    DriveCommandArgument[ii] = PCArgument[ii+arg_length]; // second argument
+                  }
+                  DriveCommandArgument[arg_length] = '\0';
+                  CommandArgument_int[1] = atoi(DriveCommandArgument);
+                  Serial.printf("Arg1: %d\r\n", CommandArgument_int[1]);
+                  
+                  // Motor Z Commmands        
+                  for (int ii=0;ii<arg_length;ii++)
+                  {
+                    DriveCommandArgument[ii] = PCArgument[ii+2*arg_length]; // third argument
+                  }                       
+                  DriveCommandArgument[arg_length] = '\0';
+                  CommandArgument_int[2] = atoi(DriveCommandArgument);
+                  Serial.printf("Arg2: %d\r\n", CommandArgument_int[2]);         
+                  
+                  // debugging to serial ACM0
+                  // Serial.printf("\r\n");
+                  // Serial.printf("Command Arg0 = %d \r\n", CommandArgument_int[0]);
+                  // Serial.printf("Command Arg1 = %d \r\n", CommandArgument_int[1]);
+                  // Serial.printf("Command Arg2 = %d \r\n", CommandArgument_int[2]);
+              
+                  NeuerBefehl=true;
+                  PCRecCount = 0;
+                  PCRecState=waitforcommand;
               }
-              DriveCommandArgument[arg_length] = '\0';
-              CommandArgument_int[1] = atoi(DriveCommandArgument);
-              Serial.printf("Arg1: %d\r\n", CommandArgument_int[1]);
-              
-              // Motor Z Commmands        
-              for (int ii=0;ii<arg_length;ii++)
-              {
-                 DriveCommandArgument[ii] = PCArgument[ii+2*arg_length]; // third argument
-              }                       
-              DriveCommandArgument[arg_length] = '\0';
-              CommandArgument_int[2] = atoi(DriveCommandArgument);
-              Serial.printf("Arg2: %d\r\n", CommandArgument_int[2]);         
-              
-              // debugging to serial ACM0
-              // Serial.printf("\r\n");
-              // Serial.printf("Command Arg0 = %d \r\n", CommandArgument_int[0]);
-              // Serial.printf("Command Arg1 = %d \r\n", CommandArgument_int[1]);
-              // Serial.printf("Command Arg2 = %d \r\n", CommandArgument_int[2]);
-          
-              NeuerBefehl=true;
-              PCRecCount = 0;
-              PCRecState=waitforcommand;
-          }
+            }
+            break;
         }
-        break;
+      }
+      break;
+    }
+    case feedthrough_Serial1_2: // feedthrough mode
+    {
+      if (Serial1.available() > 0) 
+      {
+          incomingByte = Serial1.read();
+          Serial2.write(incomingByte);
+      }
+      break;
+    }
+    case feedthrough_Serial1_3: // feedthrough mode
+    {
+      if (Serial1.available() > 0) 
+      {
+          incomingByte = Serial1.read();
+          Serial3.write(incomingByte);
+      }
+      break;
+    }
+    case feedthrough_Serial1_4: // feedthrough mode
+    {
+      if (Serial1.available() > 0) 
+      {
+          incomingByte = Serial1.read();
+          Serial4.write(incomingByte);
+      }
+      break;
     }
   }
 }
@@ -357,118 +397,159 @@ void serialEvent1()
 // Motor X Incoming 
 void serialEvent2()
 {
-   int incomingByte;
-   // int myint;
-   if (Serial2.available() > 0) 
-   {
-      incomingByte = Serial2.read();
-      MotXMessage[MotXMessageCount++]=incomingByte;
-      
-      switch (MotXRecState)
-      {
-        case waitfor_pos_data:
-           if (incomingByte == 10)
-           {
-               //Serial.write("MotX_position=");
-               for (int i=0; i<MotXMessageCount;i++)  // MotXMessageCount contains 2 terminator bytes
-               {  
-                  motx_pos_c[i] = MotXMessage[i];
-                  //Serial1.printf("MotX %d, %s",i, motx_pos[i]);
-               }
-               //Serial1.printf("MotXMessageCount = %d\r\n",MotXMessageCount);
-               motx_pos_c[MotXMessageCount] = '\0';
-               
-               motx_pos_mm = atoi(motx_pos_c) / incPERmm_x;
-               // Serial.printf("motx_mm = %d\r\n",motx_pos_mm);
-               MotXMessageCount = 0;
-               MotXPosState = avail;
-               MotXRecState = nothingtodo;               
-           }
-           break;
+  static int incomingByte;
 
-        case waitfor_vel_data:
-           if (incomingByte == 10)
-           {
-               //Serial.write("MotX_velocity=");
-               for (int i=0; i<MotXMessageCount;i++)
-               {
-                  motx_vel_c[i] = MotXMessage[i];
-               }
-               motx_vel_c[MotXMessageCount] = '\0';
-               motx_vel_mms = atoi(motx_vel_c) * mmPERsPERrpm_x;
-               MotXMessageCount = 0;
-               MotXVelState = avail;
-               MotXRecState = nothingtodo;                          
-           }
-           break;
-
-        default: Serial.write(incomingByte);
+  if (CodeState==gantry_control)
+  {
+    if (Serial2.available() > 0) 
+    {
+        incomingByte = Serial2.read();
+        MotXMessage[MotXMessageCount++]=incomingByte;
         
-      }          
-   }
+        switch (MotXRecState)
+        {
+          case waitfor_pos_data:
+          {
+            if (incomingByte == 10)
+            {
+                //Serial.write("MotX_position=");
+                for (int i=0; i<MotXMessageCount;i++)  // MotXMessageCount contains 2 terminator bytes
+                {  
+                    motx_pos_c[i] = MotXMessage[i];
+                    //Serial1.printf("MotX %d, %s",i, motx_pos[i]);
+                }
+                //Serial1.printf("MotXMessageCount = %d\r\n",MotXMessageCount);
+                motx_pos_c[MotXMessageCount] = '\0';
+                
+                motx_pos_mm = atoi(motx_pos_c) / incPERmm_x;
+                // Serial.printf("motx_mm = %d\r\n",motx_pos_mm);
+                MotXMessageCount = 0;
+                MotXPosState = avail;
+                MotXRecState = nothingtodo;               
+            }
+            break;
+          }
+          case waitfor_vel_data:
+          {
+            if (incomingByte == 10)
+            {
+                //Serial.write("MotX_velocity=");
+                for (int i=0; i<MotXMessageCount;i++)
+                {
+                    motx_vel_c[i] = MotXMessage[i];
+                }
+                motx_vel_c[MotXMessageCount] = '\0';
+                motx_vel_mms = atoi(motx_vel_c) * mmPERsPERrpm_x;
+                MotXMessageCount = 0;
+                MotXVelState = avail;
+                MotXRecState = nothingtodo;                          
+            }
+            break;
+          }
+          default: 
+          {
+            Serial.write(incomingByte);
+            break;
+          } 
+        }
+    }
+  }
+  else if (CodeState==feedthrough_Serial1_2)
+  {
+    if (Serial2.available() > 0) 
+    {
+      incomingByte = Serial2.read();
+      Serial1.write(incomingByte);
+      Serial.println("Feedthrough 1-2");
+    }  
+  }
+  else
+  {
+    Serial.println("Nothing to do!");
+  }
 }
+
 
 // Motor Y Incoming 
 void serialEvent3()
 {
-   int incomingByte;
+  int incomingByte;
 
-   if (Serial3.available() > 0) 
-   {
+  if (CodeState==gantry_control)
+  {
+    if (Serial3.available() > 0) 
+    {
       incomingByte = Serial3.read();
       MotYMessage[MotYMessageCount++]=incomingByte;
       
       switch (MotYRecState)
       {
         case waitfor_pos_data:
-           if (incomingByte == 10)
-           {
-               //Serial.write("MotY_position=");
-               for (int i=0; i<MotYMessageCount;i++)
-               {  
+            if (incomingByte == 10)
+            {
+                //Serial.write("MotY_position=");
+                for (int i=0; i<MotYMessageCount;i++)
+                {  
                   moty_pos_c[i] = MotYMessage[i];
                   //Serial.write(MotYMessage[i]);
-               }
-               //Serial.write(13);
-               moty_pos_c[MotYMessageCount] = '\0';
-               moty_pos_mm = atoi(moty_pos_c) / incPERmm_y;
-               MotYMessageCount = 0;
-               MotYPosState = avail;
-               MotYRecState = nothingtodo;               
-           }
-           break;
+                }
+                //Serial.write(13);
+                moty_pos_c[MotYMessageCount] = '\0';
+                moty_pos_mm = atoi(moty_pos_c) / incPERmm_y;
+                MotYMessageCount = 0;
+                MotYPosState = avail;
+                MotYRecState = nothingtodo;               
+            }
+            break;
 
         case waitfor_vel_data:
-           if (incomingByte == 10)
-           {
-               //Serial.write("MotY_velocity=");
-               for (int i=0; i<MotYMessageCount;i++)
-               {
+            if (incomingByte == 10)
+            {
+                //Serial.write("MotY_velocity=");
+                for (int i=0; i<MotYMessageCount;i++)
+                {
                   moty_vel_c[i] = MotYMessage[i];
                   //Serial.write(MotYMessage[i]);
-               }
-               //Serial.write(13);
-               moty_vel_c[MotYMessageCount] = '\0';
-               moty_vel_mms = atoi(moty_vel_c) * mmPERsPERrpm_y;
-               MotYMessageCount = 0;
-               MotYVelState = avail;
-               MotYRecState = nothingtodo;                          
-           }
-           break;
+                }
+                //Serial.write(13);
+                moty_vel_c[MotYMessageCount] = '\0';
+                moty_vel_mms = atoi(moty_vel_c) * mmPERsPERrpm_y;
+                MotYMessageCount = 0;
+                MotYVelState = avail;
+                MotYRecState = nothingtodo;                          
+            }
+            break;
 
         default: Serial.write(incomingByte);
         
       }
-   }
+    }
+  }
+  else if (CodeState==feedthrough_Serial1_3)
+  {
+    if (Serial3.available() > 0) 
+    {
+      incomingByte = Serial3.read();
+      Serial1.write(incomingByte);
+      Serial.println("Feedthrough 1-3");
+    } 
+  }
+  else
+  {
+    Serial.println("Nothing to do");
+  }
+
 }
 
 // Motor Z Incoming // all value are inverted after reading /  before sending
 void serialEvent4()
 {
-   int incomingByte;
+  static int incomingByte;
 
-   if (Serial4.available() > 0) 
-   {
+  if (CodeState==gantry_control)
+  {
+    if (Serial4.available() > 0) 
+    {
       incomingByte = Serial4.read();
       MotZMessage[MotZMessageCount++]=incomingByte;
       
@@ -513,7 +594,22 @@ void serialEvent4()
         default: Serial.write(incomingByte);
         
       }
-   }
+    }
+  }
+  else if (CodeState==feedthrough_Serial1_4)
+  {
+    if (Serial4.available() > 0) 
+    {
+      incomingByte = Serial4.read();
+      Serial1.write(incomingByte);
+      Serial.println("Feedthrough 1-4");
+    } 
+  }
+  else
+  {
+    Serial.println("Nothing todo");
+  }
+
 }
 
 void command_en()  // enable drive
@@ -661,14 +757,29 @@ void command_v(int vx_mms, int vy_mms, int vz_mms)
   Serial.printf("Command V Xvel %d rpm Yvel %d rpm Zvel %d rpm\r\n",vx_rpm,vy_rpm,vz_rpm*invert_z_axis);
 }
 
-void setup() {  
+void setup() 
+{  
   pinMode(led_pin, OUTPUT);  
   
-  // External Computer
-  Serial1.setRX(0);
-  Serial1.setTX(1);
-  Serial1.begin(57600);
+  // Debug-Port / USB
+  Serial.begin(115200);
 
+  if (CodeState == gantry_control)
+  {
+    // External Computer
+    Serial1.setRX(0);
+    Serial1.setTX(1);
+    Serial1.begin(57600);
+  }
+  else // for all feedthrough modes
+  {
+    // External Computer
+    Serial1.setRX(0);
+    Serial1.setTX(1);
+    Serial1.begin(19200);  // has to be the same as the motor baudrate
+  }
+  
+  
   // Motor X
   Serial2.setRX(7);
   Serial2.setTX(8);
@@ -684,16 +795,12 @@ void setup() {
   Serial4.setTX(17);
   Serial4.begin(19200,SERIAL_8N1);
 
-  // Debug-Port / USB
-  Serial.begin(115200);
-
-    
   FlexiTimer2::set(5, 1.0/1000, ControllerStep); // set(unit, resolution(1/xxx s) ) hz = unit*resolution
   FlexiTimer2::start();
 }
 
 void transmit_data()
-  {
+{
   // transmission format:
   // x_pos_mm,x_vel_mms,y_pos_mm,y_vel_mms,z_pos_mm,z_vel_mms\r\n
 
@@ -701,7 +808,7 @@ void transmit_data()
   Serial1.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
 
   // Send data to Debug-Port
-  Serial.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
+  // Serial.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
   
   // set Flags for sent Data
   MotXPosState = sent;
@@ -717,9 +824,11 @@ void transmit_data()
 
 void loop() 
 {
-    // Request pos/vel data from motor
-    if (trigger && todo)
-    {
+  if (CodeState==gantry_control)
+  {
+     // Request pos/vel data from motor
+     if (trigger && todo)
+     {
       // Motor X
       if (MotXPosState != avail) getPosMotX();
       if (MotXVelState != avail) getVelMotX();
@@ -747,10 +856,8 @@ void loop()
       counter = counter + 1;
     }
 
-    
-    
-   if (NeuerBefehl)
-   {
+    if (NeuerBefehl)
+    { 
       NeuerBefehl=false;
       switch (PCCommand)
         {
@@ -792,5 +899,10 @@ void loop()
           case nix:
           break;
         }
-   }  
+    }  
+  }
+  else // nothing to do for feedtrhough mode
+  {
+
+  }
 }
