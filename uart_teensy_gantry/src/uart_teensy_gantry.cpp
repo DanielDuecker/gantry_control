@@ -30,7 +30,7 @@ enum MotRecState_t{nothingtodo, waitfor_pos_data, waitfor_vel_data};
 enum DataMsgStatus_t{na, avail, sent};
 
 // select Communication mode
-CommunicationMode_t CommunicationMode = gantry_control;
+const CommunicationMode_t CommunicationMode = gantry_control;
 
 
 
@@ -480,6 +480,7 @@ void serialEvent2()
   else
   {
     Serial.println("Nothing to do!");
+    Serial.printf("Serial Event2: Communication Mode %d\r\n", CommunicationMode);
   }
 }
 
@@ -551,6 +552,7 @@ void serialEvent3()
   else
   {
     Serial.println("Nothing to do");
+    Serial.printf("Serial Event3: Communication Mode %d\r\n", CommunicationMode);
   }
 
 }
@@ -622,6 +624,7 @@ void serialEvent4()
   else
   {
     Serial.println("Nothing todo");
+    Serial.printf("Serial Event4: Communication Mode %d\r\n", CommunicationMode);
   }
 
 }
@@ -822,7 +825,7 @@ void transmit_data()
   Serial1.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
 
   // Send data to Debug-Port
-  // Serial.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
+  Serial.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
   
   // set Flags for sent Data
   MotXPosState = sent;
