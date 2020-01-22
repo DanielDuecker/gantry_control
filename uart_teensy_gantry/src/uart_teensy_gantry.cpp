@@ -94,6 +94,22 @@ boolean trigger=false;
 boolean todo = false;
 
 
+// Status and Timeouts
+boolean no_time_out = true;
+
+int time_out_counter_x = 0;
+const int time_out_lim_x = 100;
+boolean b_time_out_x_counting = false;
+
+int time_out_counter_y = 0;
+const int time_out_lim_y = 100;
+boolean b_time_out_y_counting = false;
+
+int time_out_counter_z = 0;
+const int time_out_lim_z = 100;
+boolean b_time_out_z_counting = false;
+
+int transmit_rate_counter = 0;
 
 bool NeuerBefehl=false;
 void command_en();
@@ -116,6 +132,7 @@ void getPosMotZ();
 void getVelMotZ();
 
 void transmit_data();
+void reset_com_link_serial(int iserial);
 
 const int incPERmm_x = 2000000/3100;
 const int incPERmm_y = 945800/1600;
@@ -126,13 +143,109 @@ const float mmPERsPERrpm_z = 940/38.2/3000;   //  940mm/38.2s @ 3000rpm
 
 const int invert_z_axis = -1;  // invert all z commands 
 
+void time_out_update()
+{
+  if (b_time_out_x_counting)
+  {
+    time_out_counter_x++;
+  }
+  if (b_time_out_y_counting)
+  {
+    time_out_counter_y++;
+  }
+  if (b_time_out_z_counting)
+  {
+    time_out_counter_z++;
+  }
+  
+
+  if (time_out_counter_x > time_out_lim_x)
+  {
+    reset_com_link_serial(2);
+    no_time_out = false;
+    Serial.printf("Serial 2 Timout %d ms\r\n", time_out_counter_x);
+  }
+  if (time_out_counter_y > time_out_lim_y)
+  {
+    reset_com_link_serial(3);
+    no_time_out = false;
+    Serial.printf("Serial 3 Timout %d ms\r\n", time_out_counter_y);
+  }
+  if (time_out_counter_z > time_out_lim_z)
+  {
+    reset_com_link_serial(4);
+    no_time_out = false;
+    Serial.printf("Serial 4 Timout %d ms\r\n", time_out_counter_z);
+  }
+ 
+}
+
+void time_out_x_reset(boolean b_start_count)
+{
+  time_out_counter_x = 0;
+  b_time_out_x_counting = b_start_count;
+}
+
+void time_out_y_reset(boolean b_start_count)
+{
+  time_out_counter_y = 0;
+  b_time_out_y_counting = b_start_count;
+}
+
+void time_out_z_reset(boolean b_start_count)
+{
+  time_out_counter_z = 0;
+  b_time_out_z_counting = b_start_count;
+}
+
+void communication_success_serial(int i_drive)
+{
+  if (i_drive == 2)
+  {
+    time_out_x_reset(false);
+  }
+  else if (i_drive == 3)
+  {
+    time_out_y_reset(false);
+  }
+  else if (i_drive == 3)
+  {
+    time_out_z_reset(false);
+  }   
+}
+
+void reset_com_link_serial(int i_drive)
+{
+  if (i_drive == 2)
+  {
+    MotXRecState = nothingtodo; 
+    MotXPosState = na;
+    MotXVelState = na;
+    time_out_x_reset(false);
+  }
+  else if (i_drive == 3)
+  {
+    MotYRecState = nothingtodo; 
+    MotYPosState = na;
+    MotYVelState = na;
+    time_out_y_reset(false);
+  }
+  else if (i_drive == 4)
+  {
+    MotZRecState = nothingtodo; 
+    MotZPosState = na;
+    MotZVelState = na;
+    time_out_z_reset(false);
+  }
+}
+
 void Status_LED()
 {
-  static boolean output=HIGH;
+  static boolean led_output=HIGH;
   static int led_count = 0;
   static int flash_rate_hz;
 
-  if (CommunicationMode == gantry_control)
+  if (CommunicationMode == gantry_control and no_time_out)
   {
     flash_rate_hz = 2;
   }
@@ -142,24 +255,75 @@ void Status_LED()
   }
   else
   {
-    flash_rate_hz = 30;
+    flash_rate_hz = 30; // e.g if time out
   }
 
   led_count++;
-  digitalWrite(led_pin, output);
-  if (led_count== 200/flash_rate_hz)
+
+  digitalWrite(led_pin, led_output);
+
+  if (led_count == 1000/flash_rate_hz)
   {
-    output = !output;
+    led_output = !led_output;
     led_count = 0;
   } 
 }
 
+void send_alive_msg()
+{
+  static int alive_cycle_counter = 0;
+  static int alive_seconds = 0;
+  static int alive_minutes = 0;
+  static int alive_hours = 0;
+  static int alive_days = 0;
 
-void ControllerStep()
+  alive_cycle_counter++;
+
+  if (no_time_out == false)
+  {
+    alive_seconds = 0;
+    alive_minutes = 0;
+    alive_hours = 0;
+    alive_days = 0;
+    no_time_out = true;
+  }
+
+  if (alive_cycle_counter == 1000)
+  {
+    alive_cycle_counter = 0;
+    alive_seconds++;
+    
+    
+
+    if (alive_seconds % 60 == 0)
+    {
+      alive_seconds = 0;
+      alive_minutes++;
+      if (alive_minutes % 60 == 0)
+      {
+        alive_hours++;
+        if (alive_hours == 24)
+        {
+          alive_days++;
+        }
+      }
+    }
+    Serial.printf("Gantry alive w/o time-out since   %dd %dh %dmin %ds \t Transmitting data @ %dHz\r\n",
+                   alive_days, alive_hours, alive_minutes, alive_seconds, transmit_rate_counter);
+    
+    transmit_rate_counter = 0;
+  }
+    
+}
+
+
+void ControllerStep() // running at 1000Hz
 { 
   Status_LED();
   trigger =!trigger;
   todo = true;
+  time_out_update();
+  send_alive_msg();
 }
 
 
@@ -173,6 +337,7 @@ void getPosMotX()
         Serial2.write("pos");
         Serial2.write(13);
         MotXRecState = waitfor_pos_data;
+        time_out_x_reset(true);
         break;
         
       default:
@@ -188,6 +353,7 @@ void getVelMotX()
         Serial2.write("gn");
         Serial2.write(13);
         MotXRecState = waitfor_vel_data;
+        time_out_x_reset(true);
         break;
         
       default:
@@ -206,6 +372,7 @@ void getPosMotY()
         Serial3.write("pos");
         Serial3.write(13);
         MotYRecState = waitfor_pos_data;
+        time_out_y_reset(true);
         break;
         
       default:
@@ -222,6 +389,7 @@ void getVelMotY()
         Serial3.write("gn");
         Serial3.write(13);
         MotYRecState = waitfor_vel_data;
+        time_out_y_reset(true);
         break;
         
       default:
@@ -239,6 +407,7 @@ void getPosMotZ()
         Serial4.write("pos");
         Serial4.write(13);
         MotZRecState = waitfor_pos_data;
+        time_out_z_reset(true);
         break;
         
       default:
@@ -255,6 +424,7 @@ void getVelMotZ()
         Serial4.write("gn");
         Serial4.write(13);
         MotZRecState = waitfor_vel_data;
+        time_out_z_reset(true);
         break;
         
       default:
@@ -812,7 +982,7 @@ void setup()
   Serial4.setTX(17);
   Serial4.begin(19200,SERIAL_8N1);
 
-  FlexiTimer2::set(5, 1.0/1000, ControllerStep); // set(unit, resolution(1/xxx s) ) hz = unit*resolution
+  FlexiTimer2::set(1, 1.0/1000, ControllerStep); // set(unit, resolution(1/xxx s) ) hz = unit*resolution
   FlexiTimer2::start();
 }
 
@@ -825,7 +995,7 @@ void transmit_data()
   Serial1.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
 
   // Send data to Debug-Port
-  Serial.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
+  //Serial.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
   
   // set Flags for sent Data
   MotXPosState = sent;
@@ -836,6 +1006,7 @@ void transmit_data()
 
   MotZPosState = sent;
   MotZVelState = sent;
+  transmit_rate_counter++;
 }
   
 
