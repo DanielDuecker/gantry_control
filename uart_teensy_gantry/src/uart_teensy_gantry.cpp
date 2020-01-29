@@ -984,6 +984,10 @@ void setup()
 
   FlexiTimer2::set(1, 1.0/1000, ControllerStep); // set(unit, resolution(1/xxx s) ) hz = unit*resolution
   FlexiTimer2::start();
+
+  //command_di();
+  command_v(0, 0, 0);
+  //command_en();
 }
 
 void transmit_data()
