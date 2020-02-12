@@ -53,19 +53,19 @@ PCRecState_t PCRecState=waitforcommand;
 PCCommand_t PCCommand=nix;
 
 int MotXMessageCount = 0;
-int MotXMessage[14];
-int MotX_pos[5];
-int MotX_vel[5];
+int MotXMessage[20];
+int MotX_pos[10];
+int MotX_vel[10];
 
 int MotYMessageCount = 0;
-int MotYMessage[14];
-int MotY_pos[5];
-int MotY_vel[5];
+int MotYMessage[20];
+int MotY_pos[10];
+int MotY_vel[10];
 
 int MotZMessageCount = 0;
-int MotZMessage[14];
-int MotZ_pos[5];
-int MotZ_vel[5];
+int MotZMessage[20];
+int MotZ_pos[10];
+int MotZ_vel[10];
 
 const int arg_length = 6;
 char DriveCommandArgument[arg_length+1];
@@ -73,21 +73,21 @@ char DriveCommandArgument[arg_length+1];
 int counter = 0;
 
 // Motor X
-char motx_pos_c[8];
+char motx_pos_c[15];
 int motx_pos_mm;
-char motx_vel_c[5];
+char motx_vel_c[10];
 int motx_vel_mms;
 
 // Motor Y
-char moty_pos_c[8];
+char moty_pos_c[15];
 int moty_pos_mm;
-char moty_vel_c[5];
+char moty_vel_c[10];
 int moty_vel_mms;
 
 // Motor Z
-char motz_pos_c[8];
+char motz_pos_c[15];
 int motz_pos_mm;
-char motz_vel_c[5];
+char motz_vel_c[10];
 int motz_vel_mms;
 
 boolean trigger=false;
@@ -161,9 +161,10 @@ void time_out_update()
 
   if (time_out_counter_x > time_out_lim_x)
   {
+    Serial.printf("Serial 2 Timout %d ms\r\n", time_out_counter_x);
     reset_com_link_serial(2);
     no_time_out = false;
-    Serial.printf("Serial 2 Timout %d ms\r\n", time_out_counter_x);
+    
   }
   if (time_out_counter_y > time_out_lim_y)
   {
@@ -197,7 +198,7 @@ void time_out_z_reset(boolean b_start_count)
   time_out_counter_z = 0;
   b_time_out_z_counting = b_start_count;
 }
-
+/*
 void communication_success_serial(int i_drive)
 {
   if (i_drive == 2)
@@ -213,12 +214,12 @@ void communication_success_serial(int i_drive)
     time_out_z_reset(false);
   }   
 }
-
+*/
 void reset_com_link_serial(int i_drive)
 {
   if (i_drive == 2)
   {
-    MotXRecState = nothingtodo; 
+    //MotXRecState = nothingtodo; 
     MotXPosState = na;
     MotXVelState = na;
     time_out_x_reset(false);
@@ -352,11 +353,13 @@ void getVelMotX()
         
         Serial2.write("gn");
         Serial2.write(13);
+        Serial.println("gn ser 2");
         MotXRecState = waitfor_vel_data;
         time_out_x_reset(true);
         break;
         
       default:
+        Serial.printf("motx_rec_state: %d\r\n", MotXRecState);
         break;
   }
 }
@@ -596,7 +599,7 @@ void serialEvent2()
           {
             if (incomingByte == 10)
             {
-                //Serial.write("MotX_position=");
+                Serial.printf("Current Message Cound POS X %d \r\n",MotXMessageCount);
                 for (int i=0; i<MotXMessageCount;i++)  // MotXMessageCount contains 2 terminator bytes
                 {  
                     motx_pos_c[i] = MotXMessage[i];
@@ -618,9 +621,11 @@ void serialEvent2()
             if (incomingByte == 10)
             {
                 //Serial.write("MotX_velocity=");
+                Serial.printf("Current Message Cound VEL X %d \r\n",MotXMessageCount);
                 for (int i=0; i<MotXMessageCount;i++)
                 {
                     motx_vel_c[i] = MotXMessage[i];
+                    Serial.printf("%d\r\n",MotXMessage[i]);
                 }
                 motx_vel_c[MotXMessageCount] = '\0';
                 motx_vel_mms = atoi(motx_vel_c) * mmPERsPERrpm_x;
@@ -630,6 +635,10 @@ void serialEvent2()
             }
             break;
           }
+          case nothingtodo:
+            Serial.println("Nothing to DO 2 \r\n");
+            Serial.printf("%d \r\n",incomingByte);
+            break;
           default: 
           {
             Serial.write(incomingByte);
@@ -704,7 +713,9 @@ void serialEvent3()
                 MotYRecState = nothingtodo;                          
             }
             break;
-
+        case nothingtodo:
+          Serial.println("Nothing to DO 3 \r\n");
+          break;
         default: Serial.write(incomingByte);
         
       }
@@ -776,7 +787,9 @@ void serialEvent4()
                MotZRecState = nothingtodo;                          
            }
            break;
-
+         case nothingtodo:
+            Serial.println("Nothing to DO 4 \r\n");
+            break;
         default: Serial.write(incomingByte);
         
       }
@@ -999,7 +1012,7 @@ void transmit_data()
   Serial1.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
 
   // Send data to Debug-Port
-  //Serial.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
+  Serial.printf("%d,%d,%d,%d,%d,%d\r\n",motx_pos_mm,motx_vel_mms, moty_pos_mm,moty_vel_mms, motz_pos_mm,motz_vel_mms);
   
   // set Flags for sent Data
   MotXPosState = sent;
@@ -1038,9 +1051,9 @@ void loop()
     // transmit pos/vel data to ext. computer IF ALL are available
     if ((MotXPosState == avail) && 
         (MotXVelState == avail) &&
+        (MotYPosState == avail) &&
         (MotYVelState == avail) &&
-        (MotYVelState == avail) &&
-        (MotZVelState == avail) &&
+        (MotZPosState == avail) &&
         (MotZVelState == avail))
 
     {
